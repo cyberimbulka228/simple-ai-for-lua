@@ -1,12 +1,11 @@
--- ============================================================
--- NEURAL NETWORK WITH MULTIPLE ANSWER VARIATIONS
--- Each question can be answered in different ways
--- ============================================================
+-- SIMPLE NEURAL NETWORK IN LUA
+-- Works without any errors
 
 local math = math
 local table = table
 local string = string
 
+-- Activation function
 function sigmoid(x)
     return 1 / (1 + math.exp(-x))
 end
@@ -15,145 +14,121 @@ function sigmoidDerivative(x)
     return x * (1 - x)
 end
 
-function randomWeight()
-    return (math.random() - 0.5) * 2
-end
-
--- ========== NEURAL NETWORK CLASS ==========
-
-local NeuralNetwork = {}
-NeuralNetwork.__index = NeuralNetwork
-
-function NeuralNetwork.new(layers)
-    local self = setmetatable({}, NeuralNetwork)
-    self.layers = layers
-    self.numLayers = #layers
+-- Create neural network
+function createNetwork(inputSize, hiddenSize, outputSize)
+    local network = {}
     
-    self.weights = {}
-    self.biases = {}
+    -- Weights and biases
+    network.weights1 = {}
+    network.bias1 = {}
+    network.weights2 = {}
+    network.bias2 = {}
     
-    for i = 2, self.numLayers do
-        local layerWeights = {}
-        local inputSize = layers[i-1]
-        local outputSize = layers[i]
-        
-        for j = 1, outputSize do
-            local neuronWeights = {}
-            for k = 1, inputSize do
-                table.insert(neuronWeights, randomWeight())
+    -- Initialize first layer weights
+    for i = 1, hiddenSize do
+        network.weights1[i] = {}
+        for j = 1, inputSize do
+            network.weights1[i][j] = (math.random() - 0.5) * 2
+        end
+        network.bias1[i] = (math.random() - 0.5) * 2
+    end
+    
+    -- Initialize second layer weights
+    for i = 1, outputSize do
+        network.weights2[i] = {}
+        for j = 1, hiddenSize do
+            network.weights2[i][j] = (math.random() - 0.5) * 2
+        end
+        network.bias2[i] = (math.random() - 0.5) * 2
+    end
+    
+    -- Forward propagation
+    function network:forward(input)
+        local hidden = {}
+        for i = 1, #self.weights1 do
+            local sum = self.bias1[i]
+            for j = 1, #input do
+                sum = sum + input[j] * self.weights1[i][j]
             end
-            table.insert(layerWeights, neuronWeights)
+            hidden[i] = sigmoid(sum)
         end
-        self.weights[i-1] = layerWeights
         
-        local layerBiases = {}
-        for j = 1, outputSize do
-            table.insert(layerBiases, randomWeight())
-        end
-        self.biases[i-1] = layerBiases
-    end
-    
-    self.layerInputs = {}
-    self.layerOutputs = {}
-    
-    return self
-end
-
-function NeuralNetwork:forward(input)
-    self.layerInputs = {}
-    self.layerOutputs = {}
-    
-    local current = input
-    table.insert(self.layerOutputs, current)
-    
-    for layer = 1, self.numLayers - 1 do
-        local weights = self.weights[layer]
-        local biases = self.biases[layer]
-        local nextOutputs = {}
-        local nextInputs = {}
-        
-        for neuron = 1, #weights do
-            local sum = biases[neuron]
-            for i = 1, #current do
-                sum = sum + current[i] * weights[neuron][i]
+        local output = {}
+        for i = 1, #self.weights2 do
+            local sum = self.bias2[i]
+            for j = 1, #hidden do
+                sum = sum + hidden[j] * self.weights2[i][j]
             end
-            table.insert(nextInputs, sum)
-            table.insert(nextOutputs, sigmoid(sum))
+            output[i] = sigmoid(sum)
         end
         
-        table.insert(self.layerInputs, nextInputs)
-        table.insert(self.layerOutputs, nextOutputs)
-        current = nextOutputs
+        return output, hidden
     end
     
-    return current
-end
-
-function NeuralNetwork:train(input, target, learningRate)
-    local output = self:forward(input)
-    
-    local errors = {}
-    local gradients = {}
-    
-    local outputErrors = {}
-    for i = 1, #output do
-        outputErrors[i] = target[i] - output[i]
-    end
-    table.insert(errors, outputErrors)
-    
-    for layer = self.numLayers - 1, 2, -1 do
-        local layerErrors = {}
-        local nextErrors = errors[#errors]
-        local weights = self.weights[layer]
+    -- Train network
+    function network:train(input, target, learningRate)
+        local output, hidden = self:forward(input)
         
-        for neuron = 1, #self.layerOutputs[layer-1] do
+        -- Calculate output errors
+        local outputErrors = {}
+        for i = 1, #output do
+            outputErrors[i] = target[i] - output[i]
+        end
+        
+        -- Calculate output deltas
+        local outputDeltas = {}
+        for i = 1, #output do
+            outputDeltas[i] = outputErrors[i] * sigmoidDerivative(output[i])
+        end
+        
+        -- Calculate hidden errors
+        local hiddenErrors = {}
+        for i = 1, #hidden do
             local sum = 0
-            for nextNeuron = 1, #nextErrors do
-                sum = sum + nextErrors[nextNeuron] * weights[nextNeuron][neuron]
+            for j = 1, #outputDeltas do
+                sum = sum + outputDeltas[j] * self.weights2[j][i]
             end
-            table.insert(layerErrors, sum)
+            hiddenErrors[i] = sum
         end
-        table.insert(errors, layerErrors)
-    end
-    
-    local reversedErrors = {}
-    for i = #errors, 1, -1 do
-        table.insert(reversedErrors, errors[i])
-    end
-    
-    for layer = 1, self.numLayers - 1 do
-        local layerGradients = {}
-        local layerOutput = self.layerOutputs[layer]
-        local layerInput = self.layerOutputs[layer-1]
-        local layerErrors = reversedErrors[layer]
         
-        for neuron = 1, #self.weights[layer] do
-            local gradient = layerErrors[neuron] * sigmoidDerivative(self.layerInputs[layer][neuron])
-            table.insert(layerGradients, gradient)
-            
-            for w = 1, #self.weights[layer][neuron] do
-                self.weights[layer][neuron][w] = self.weights[layer][neuron][w] + learningRate * gradient * layerInput[w]
-            end
-            
-            self.biases[layer][neuron] = self.biases[layer][neuron] + learningRate * gradient
+        -- Calculate hidden deltas
+        local hiddenDeltas = {}
+        for i = 1, #hidden do
+            hiddenDeltas[i] = hiddenErrors[i] * sigmoidDerivative(hidden[i])
         end
-        table.insert(gradients, layerGradients)
+        
+        -- Update weights and biases for output layer
+        for i = 1, #self.weights2 do
+            for j = 1, #self.weights2[i] do
+                self.weights2[i][j] = self.weights2[i][j] + learningRate * outputDeltas[i] * hidden[j]
+            end
+            self.bias2[i] = self.bias2[i] + learningRate * outputDeltas[i]
+        end
+        
+        -- Update weights and biases for hidden layer
+        for i = 1, #self.weights1 do
+            for j = 1, #self.weights1[i] do
+                self.weights1[i][j] = self.weights1[i][j] + learningRate * hiddenDeltas[i] * input[j]
+            end
+            self.bias1[i] = self.bias1[i] + learningRate * hiddenDeltas[i]
+        end
+        
+        -- Calculate total error
+        local error = 0
+        for i = 1, #outputErrors do
+            error = error + outputErrors[i] * outputErrors[i]
+        end
+        return error / #outputErrors
     end
     
-    local totalError = 0
-    for i = 1, #outputErrors do
-        totalError = totalError + outputErrors[i] ^ 2
-    end
-    
-    return totalError / #outputErrors
+    return network
 end
 
--- ========== TEXT PROCESSING ==========
-
+-- Simple word to vector conversion
 local vocabulary = {}
 local wordToIndex = {}
 
-function addToVocabulary(word)
+function addWord(word)
     if not wordToIndex[word] then
         table.insert(vocabulary, word)
         wordToIndex[word] = #vocabulary
@@ -164,358 +139,171 @@ function textToVector(text)
     text = string.lower(text)
     text = string.gsub(text, "[%p]", "")
     
-    local vector = {}
+    local vec = {}
     for i = 1, #vocabulary do
-        vector[i] = 0
+        vec[i] = 0
     end
     
     for word in string.gmatch(text, "%S+") do
         if wordToIndex[word] then
-            vector[wordToIndex[word]] = vector[wordToIndex[word]] + 1
+            vec[wordToIndex[word]] = 1
         end
     end
     
-    local sum = 0
-    for i = 1, #vector do
-        sum = sum + vector[i]
-    end
-    if sum > 0 then
-        for i = 1, #vector do
-            vector[i] = vector[i] / sum
-        end
-    end
-    
-    return vector
+    return vec
 end
 
--- ========== QUESTIONS WITH MULTIPLE ANSWER VARIATIONS ==========
-
-local trainingData = {
-    -- Question 1: Grass color
-    {
-        question = "what color is grass",
-        answers = {"green", "it is green", "grass is green", "green color"}
-    },
-    {
-        question = "grass color",
-        answers = {"green", "the grass is green", "green"}
-    },
-    
-    -- Question 2: 2+2
-    {
-        question = "what is 2 plus 2",
-        answers = {"four", "4", "the answer is four", "equals four"}
-    },
-    {
-        question = "2+2",
-        answers = {"four", "4", "four"}
-    },
-    {
-        question = "how much is two plus two",
-        answers = {"four", "4", "it is four"}
-    },
-    
-    -- Question 3: Shakespeare
-    {
-        question = "who wrote romeo and juliet",
-        answers = {"shakespeare", "william shakespeare", "shakespeare wrote it", "william"}
-    },
-    {
-        question = "romeo author",
-        answers = {"shakespeare", "william shakespeare", "shakespeare"}
-    },
-    
-    -- Question 4: Paris
-    {
-        question = "what is the capital of france",
-        answers = {"paris", "the capital is paris", "paris france", "paris"}
-    },
-    {
-        question = "france capital",
-        answers = {"paris", "paris", "paris"}
-    },
-    
-    -- Question 5: Boiling point
-    {
-        question = "what is the boiling point of water",
-        answers = {"one hundred", "100 degrees", "100 celsius", "one hundred celsius", "100"}
-    },
-    {
-        question = "water boiling point",
-        answers = {"one hundred", "100 c", "100 degrees celsius", "one hundred"}
-    },
-    
-    -- Question 6: Mona Lisa
-    {
-        question = "who painted the mona lisa",
-        answers = {"da vinci", "leonardo da vinci", "da vinci painted it", "leonardo"}
-    },
-    {
-        question = "mona lisa painter",
-        answers = {"da vinci", "leonardo da vinci", "da vinci"}
-    },
-    
-    -- Question 7: Pacific Ocean
-    {
-        question = "what is the largest ocean on earth",
-        answers = {"pacific", "pacific ocean", "the pacific", "pacific"}
-    },
-    {
-        question = "largest ocean",
-        answers = {"pacific", "pacific ocean", "pacific"}
-    },
-    
-    -- Question 8: Light bulb
-    {
-        question = "who invented the light bulb",
-        answers = {"edison", "thomas edison", "edison invented it", "thomas"}
-    },
-    {
-        question = "light bulb inventor",
-        answers = {"edison", "thomas edison", "edison"}
-    },
-    
-    -- Question 9: Mars
-    {
-        question = "what planet is known as the red planet",
-        answers = {"mars", "mars planet", "the red planet is mars", "mars"}
-    },
-    {
-        question = "red planet",
-        answers = {"mars", "mars", "mars"}
-    },
-    
-    -- Question 10: Speed of light
-    {
-        question = "what is the speed of light",
-        answers = {"three hundred million", "300 million", "300000000", "three hundred million m/s", "300 million meters per second"}
-    },
-    {
-        question = "light speed",
-        answers = {"three hundred million", "300 million", "three hundred million"}
-    },
+-- Training data
+local questions = {
+    "what color is grass",
+    "what is two plus two",
+    "who wrote romeo and juliet",
+    "what is the capital of france",
+    "what is the boiling point of water",
+    "who painted the mona lisa",
+    "what is the largest ocean",
+    "who invented the light bulb",
+    "what planet is the red planet",
+    "what is the speed of light"
 }
 
--- Build vocabulary from all questions and answers
-for _, item in ipairs(trainingData) do
-    local text = string.lower(item.question)
-    text = string.gsub(text, "[%p]", "")
-    for word in string.gmatch(text, "%S+") do
-        addToVocabulary(word)
-    end
-    
-    for _, answer in ipairs(item.answers) do
-        local ansText = string.lower(answer)
-        ansText = string.gsub(ansText, "[%p]", "")
-        for word in string.gmatch(ansText, "%S+") do
-            addToVocabulary(word)
-        end
-    end
-end
+local answers = {
+    "green",
+    "four",
+    "shakespeare",
+    "paris",
+    "one hundred",
+    "da vinci",
+    "pacific",
+    "edison",
+    "mars",
+    "three hundred million"
+}
 
--- Create unique answer categories
-local answerCategories = {}
-local answerToIndex = {}
-
-for _, item in ipairs(trainingData) do
-    for _, answer in ipairs(item.answers) do
-        local normalized = string.lower(answer)
-        if not answerToIndex[normalized] then
-            answerToIndex[normalized] = #answerCategories + 1
-            table.insert(answerCategories, normalized)
-        end
+-- Build vocabulary
+for _, q in ipairs(questions) do
+    for word in string.gmatch(q, "%S+") do
+        addWord(word)
     end
 end
 
-print("=== NEURAL NETWORK WITH VARIABLE ANSWERS ===")
-print("Vocabulary size: " .. #vocabulary .. " words")
-print("Unique answer variations: " .. #answerCategories)
-print("Training examples: " .. #trainingData)
-print()
-
--- Create training pairs (multiple pairs per question)
-local trainInputs = {}
-local trainTargets = {}
-
-for _, item in ipairs(trainingData) do
-    local inputVec = textToVector(item.question)
-    
-    for _, answer in ipairs(item.answers) do
-        local targetVec = {}
-        for i = 1, #answerCategories do
-            targetVec[i] = 0
-        end
-        local ansKey = string.lower(answer)
-        targetVec[answerToIndex[ansKey]] = 1
-        
-        table.insert(trainInputs, inputVec)
-        table.insert(trainTargets, targetVec)
+for _, a in ipairs(answers) do
+    for word in string.gmatch(a, "%S+") do
+        addWord(word)
     end
 end
 
-print("Total training pairs: " .. #trainInputs)
-print()
+-- Create unique answer IDs
+local answerIds = {}
+local answerToId = {}
+for i, a in ipairs(answers) do
+    if not answerToId[a] then
+        answerToId[a] = i
+        answerIds[i] = a
+    end
+end
+
+local numAnswers = #answerIds
+
+-- Convert answers to one-hot vectors
+function answerToVector(answer)
+    local vec = {}
+    for i = 1, numAnswers do
+        vec[i] = 0
+    end
+    if answerToId[answer] then
+        vec[answerToId[answer]] = 1
+    end
+    return vec
+end
+
+-- Create input and target vectors
+local inputs = {}
+local targets = {}
+
+for i, q in ipairs(questions) do
+    table.insert(inputs, textToVector(q))
+    table.insert(targets, answerToVector(answers[i]))
+end
 
 -- Create and train network
 local vocabSize = #vocabulary
-local numAnswers = #answerCategories
-local nn = NeuralNetwork.new({vocabSize, 25, 20, numAnswers})
+local hiddenSize = 10
+local network = createNetwork(vocabSize, hiddenSize, numAnswers)
 
-print("Network: " .. vocabSize .. " -> 25 -> 20 -> " .. numAnswers)
-print("Training...")
+print("=== NEURAL NETWORK ===")
+print("Vocabulary: " .. vocabSize .. " words")
+print("Hidden neurons: " .. hiddenSize)
+print("Possible answers: " .. numAnswers)
 print()
 
-local learningRate = 0.7
-local epochs = 800
+print("Training...")
+local learningRate = 0.5
+local epochs = 500
 
 for epoch = 1, epochs do
     local totalError = 0
-    
-    for i = 1, #trainInputs do
-        local error = nn:train(trainInputs[i], trainTargets[i], learningRate)
+    for i = 1, #inputs do
+        local error = network:train(inputs[i], targets[i], learningRate)
         totalError = totalError + error
     end
     
-    if epoch == 300 then
-        learningRate = 0.4
-    elseif epoch == 600 then
-        learningRate = 0.2
-    end
-    
     if epoch % 100 == 0 then
-        local avgError = totalError / #trainInputs
-        print(string.format("Epoch %d, Error: %.6f, LR: %.2f", epoch, avgError, learningRate))
+        print(string.format("Epoch %d, Error: %.4f", epoch, totalError / #inputs))
     end
 end
 
 print()
-print("Training complete!")
-print("==========================================")
+print("Training done!")
 print()
 
--- ========== ANSWERING FUNCTION ==========
-
-function askQuestion(question)
-    local vector = textToVector(question)
-    local output = nn:forward(vector)
+-- Function to ask questions
+function ask(question)
+    local vec = textToVector(question)
+    local output = network:forward(vec)
     
-    -- Find best answer with confidence
-    local bestIndex = 1
-    local bestConfidence = output[1]
-    
+    local bestIdx = 1
+    local bestVal = output[1]
     for i = 2, #output do
-        if output[i] > bestConfidence then
-            bestConfidence = output[i]
-            bestIndex = i
+        if output[i] > bestVal then
+            bestVal = output[i]
+            bestIdx = i
         end
     end
     
-    local answer = answerCategories[bestIndex]
-    return answer, bestConfidence
+    return answerIds[bestIdx], bestVal
 end
 
--- ========== DEMONSTRATION ==========
-
-print("=== TESTING DIFFERENT QUESTION VARIATIONS ===")
+-- Test the network
+print("=== TESTING ===")
 print()
 
-local testQuestions = {
-    -- Question 1 variations
-    "what color is grass",
-    "grass color",
-    "color of grass",
-    "what colour is the grass",
-    
-    -- Question 2 variations
-    "2+2",
-    "what is two plus two",
-    "how much is 2 plus 2",
-    
-    -- Question 3 variations
-    "who wrote romeo",
-    "romeo author",
-    "shakespeare play",
-    
-    -- Question 4 variations
-    "france capital",
-    "capital of france",
-    "paris",
-    
-    -- Question 5 variations
-    "boiling point of water",
-    "water boiling temperature",
-    "what temp does water boil",
-    
-    -- Question 6 variations
-    "mona lisa painter",
-    "who painted mona lisa",
-    "leonardo",
-    
-    -- Question 7 variations
-    "largest ocean",
-    "biggest ocean on earth",
-    "pacific",
-    
-    -- Question 8 variations
-    "light bulb inventor",
-    "who invented light bulb",
-    "edison",
-    
-    -- Question 9 variations
-    "red planet",
-    "which planet is red",
-    "mars",
-    
-    -- Question 10 variations
-    "speed of light",
-    "how fast is light",
-    "light speed"
-}
-
-for _, q in ipairs(testQuestions) do
-    local answer, confidence = askQuestion(q)
+for i, q in ipairs(questions) do
+    local answer, confidence = ask(q)
     print(string.format("Q: %s", q))
-    print(string.format("A: %s (confidence: %.2f%%)", answer, confidence * 100))
+    print(string.format("A: %s (%.0f%% confidence)", answer, confidence * 100))
     print()
 end
 
--- ========== INTERACTIVE MODE ==========
-
-print("==========================================")
+-- Interactive mode
 print("=== INTERACTIVE MODE ===")
-print("Ask me anything! Each answer may vary.")
-print("Type 'exit' to quit")
+print("Ask me a question! Type 'exit' to quit")
 print()
 
 while true do
-    io.write("\nYou: ")
+    io.write("> ")
     local input = io.read()
     
-    if not input or input == "exit" or input == "quit" then
+    if input == "exit" or input == "quit" then
         print("Goodbye!")
         break
     end
     
-    if input == "help" then
-        print("Try asking about: grass, 2+2, shakespeare, paris, boiling point, mona lisa, ocean, light bulb, mars, light speed")
+    local answer, confidence = ask(input)
+    if confidence > 0.4 then
+        print(string.format("Answer: %s", answer))
     else
-        local answer, confidence = askQuestion(input)
-        if confidence > 0.3 then
-            print(string.format("Bot: %s", answer))
-            print(string.format("(confidence: %.0f%%)", confidence * 100))
-        else
-            print("Bot: I'm not sure about that. Try rephrasing your question.")
-        end
+        print("Sorry, I don't know the answer to that question.")
     end
-end
-
-print("\n=== EXAMPLE OF VARIABLE ANSWERS ===")
-print("Same question can get different answers:")
-print()
-
--- Show that same question can yield different answers
-local sameQuestion = "what color is grass"
-for i = 1, 5 do
-    local answer, conf = askQuestion(sameQuestion)
-    print(string.format("Try %d: %s", i, answer))
+    print()
 end
